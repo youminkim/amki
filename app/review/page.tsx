@@ -1,258 +1,188 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { ArrowLeft } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useCallback, useRef } from "react";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+import { AmkiPair, AmkiState, selectNextPairs } from "@/lib/review";
+import { pushAmkiHistory } from "@/lib/amkiStorage";
 
 // Define types for our data structures
-interface AmkiSet {
-  id: string
-  question: string
-  answer: string
-  createdAt: number
-}
-
 interface ReviewHistory {
-  cardId: string
-  nextReviewTime: number
-  reviewCount: number
-  lastDifficulty: "again" | "good" | "easy"
+  cardId: string;
+  nextReviewTime: number;
+  reviewCount: number;
+  lastDifficulty: "again" | "good" | "easy";
 }
 
 export default function ReviewPage() {
-  const router = useRouter()
-  const [amkiSets, setAmkiSets] = useState<AmkiSet[]>([])
-  const [reviewHistory, setReviewHistory] = useState<Record<string, ReviewHistory>>({})
-  const [currentCard, setCurrentCard] = useState<AmkiSet | null>(null)
-  const [showAnswer, setShowAnswer] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const router = useRouter();
+  const [amkiPairs, setAmkiPairs] = useState<AmkiPair[]>([]);
+  const [reviewHistory, setReviewHistory] = useState<
+    Record<string, ReviewHistory>
+  >({});
+  const [currentCard, setCurrentCard] = useState<AmkiPair | null>(null);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Load data from localStorage
   useEffect(() => {
     try {
-      const savedSets = localStorage.getItem("amkiSets")
-      const savedHistory = localStorage.getItem("amkiReviewHistory")
+      const savedPairs = localStorage.getItem("amkiItems");
 
-      if (savedSets) {
-        setAmkiSets(JSON.parse(savedSets))
+      if (savedPairs) {
+        setAmkiPairs(JSON.parse(savedPairs));
       }
 
-      if (savedHistory) {
-        setReviewHistory(JSON.parse(savedHistory))
-      }
-
-      setIsLoading(false)
+      setIsLoading(false);
     } catch (error) {
-      console.error("Error loading data from localStorage:", error)
-      setIsLoading(false)
+      console.error("Error loading data from localStorage:", error);
+      setIsLoading(false);
     }
-  }, [])
+  }, []);
 
   // Select the next card to review
-  const selectNextCard = useCallback(() => {
-    if (amkiSets.length === 0) return null
-
-    const now = Date.now()
-    const availableCards = amkiSets.filter((card) => {
-      const history = reviewHistory[card.id]
-      return !history || history.nextReviewTime <= now
-    })
-
-    if (availableCards.length === 0) {
-      return null // No cards due for review
-    }
-
-    // Sort by priority (cards with "again" first, then by next review time)
-    availableCards.sort((a, b) => {
-      const historyA = reviewHistory[a.id]
-      const historyB = reviewHistory[b.id]
-
-      // New cards (no history) come after cards with history
-      if (!historyA && historyB) return 1
-      if (historyA && !historyB) return -1
-      if (!historyA && !historyB) return 0
-
-      // Cards marked "again" come first
-      if (historyA.lastDifficulty === "again" && historyB.lastDifficulty !== "again") return -1
-      if (historyA.lastDifficulty !== "again" && historyB.lastDifficulty === "again") return 1
-
-      // Otherwise sort by next review time
-      return historyA.nextReviewTime - historyB.nextReviewTime
-    })
-
-    return availableCards[0]
-  }, [amkiSets, reviewHistory])
+  const selectedPairs = useCallback(() => {
+    return selectNextPairs(amkiPairs);
+  }, [amkiPairs]);
 
   // Load the next card when needed
   useEffect(() => {
     if (!isLoading && !currentCard) {
-      const nextCard = selectNextCard()
-      setCurrentCard(nextCard)
-      setShowAnswer(false)
+      setCurrentCard(selectedPairs()[0]);
+      setShowAnswer(false);
     }
-  }, [isLoading, currentCard, selectNextCard])
+  }, [isLoading, currentCard, selectedPairs]);
 
-  // Calculate next review time based on difficulty
-  const calculateNextReviewTime = (difficulty: "again" | "good" | "easy", reviewCount: number) => {
-    const now = Date.now()
+  // Handle difficulty rating and move to next card
+  const handleDifficultyRating = (state: AmkiState) => {
+    if (!currentCard) return;
 
-    switch (difficulty) {
-      case "again":
-        return now + 1 * 60 * 1000 // 1 minute
-      case "good":
-        return now + 10 * 60 * 1000 // 10 minutes
-      case "easy":
-        return now + 24 * 60 * 60 * 1000 // 1 day
-      default:
-        return now + 10 * 60 * 1000 // Default to 10 minutes
-    }
-  }
+    // Update history
+    pushAmkiHistory(currentCard.id, state);
 
-  // Handle difficulty rating
-  const handleDifficultyRating = (difficulty: "again" | "good" | "easy") => {
-    if (!currentCard) return
-
-    const cardId = currentCard.id
-    const existingHistory = reviewHistory[cardId] || {
-      cardId,
-      nextReviewTime: 0,
-      reviewCount: 0,
-      lastDifficulty: "good",
-    }
-
-    const updatedHistory: ReviewHistory = {
-      ...existingHistory,
-      reviewCount: existingHistory.reviewCount + 1,
-      nextReviewTime: calculateNextReviewTime(difficulty, existingHistory.reviewCount + 1),
-      lastDifficulty: difficulty,
-    }
-
-    const newHistory = {
-      ...reviewHistory,
-      [cardId]: updatedHistory,
-    }
-
-    // Save to state and localStorage
-    setReviewHistory(newHistory)
-    try {
-      localStorage.setItem("amkiReviewHistory", JSON.stringify(newHistory))
-    } catch (error) {
-      console.error("Error saving review history:", error)
-    }
-
-    // Move to next card
-    setCurrentCard(null)
-  }
+    // Immediately select and show next card
+    const nextPairs = selectNextPairs(amkiPairs);
+    setCurrentCard(nextPairs[0] || null);
+    setShowAnswer(false);
+  };
 
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!currentCard) return
+      if (!currentCard) return;
 
       if (!showAnswer) {
         // Any key shows the answer when it's hidden
-        setShowAnswer(true)
-        return
+        setShowAnswer(true);
+        return;
       }
 
       // Number keys for difficulty ratings
       switch (e.key) {
-        case "1":
-          handleDifficultyRating("again")
-          break
-        case "2":
-          handleDifficultyRating("good")
-          break
-        case "3":
-          handleDifficultyRating("easy")
-          break
+        case "1": // easy
+          handleDifficultyRating(AmkiState.Stable);
+          break;
+        case "2": // good
+          handleDifficultyRating(AmkiState.Retrieve);
+          break;
+        case "3": // again
+          handleDifficultyRating(AmkiState.Difficult);
+          break;
       }
-    }
+    };
 
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [currentCard, showAnswer])
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentCard, showAnswer, amkiPairs]);
 
   // Handle card click to show answer
   const handleCardClick = () => {
     if (!showAnswer) {
-      setShowAnswer(true)
+      setShowAnswer(true);
     }
-  }
+  };
 
   // Go back to home page
   const goBack = () => {
-    router.push("/")
-  }
+    router.push("/");
+  };
 
   return (
-    <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
-      <div className="flex items-center mb-4">
-        <Button variant="ghost" size="sm" onClick={goBack} className="mr-2">
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back
-        </Button>
-        <h1 className="text-lg font-medium">Review Flashcards</h1>
-      </div>
-
+    <div className="h-[80vh] flex flex-col p-4 bg-black text-white overflow-hidden">
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center">
           <p>Loading flashcards...</p>
         </div>
       ) : !currentCard ? (
         <div className="flex-1 flex flex-col items-center justify-center">
-          <p className="text-center mb-4">No cards due for review!</p>
-          <Button onClick={goBack}>Return to Home</Button>
+          <p className="text-center mb-4 text-xl font-bold">
+            🎉 All caught up!
+          </p>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden">
           <div
             ref={containerRef}
-            className="flex-1 flex flex-col border rounded-lg shadow-sm overflow-hidden cursor-pointer"
+            className="flex-1 flex flex-col border border-gray-800 rounded-lg overflow-hidden cursor-pointer bg-gray-900"
             onClick={handleCardClick}
           >
-            <div className="flex-1 p-6 flex flex-col">
-              <div className="flex-1 flex items-center justify-center mb-4">
-                <p className="text-xl text-center">{currentCard.question}</p>
+            <div className="flex-1 p-4 flex flex-col overflow-y-auto">
+              <div className="flex-1 flex items-center justify-center min-h-[40%]">
+                <p className="text-xl text-center break-words px-4">
+                  {currentCard.question}
+                </p>
               </div>
 
-              {showAnswer && (
-                <>
-                  <hr className="my-4" />
-                  <div className="flex-1 flex items-start justify-center">
-                    <p className="text-lg">{currentCard.answer}</p>
-                  </div>
-                </>
-              )}
+              <hr className="my-4 border-gray-800" />
+              <div className="flex-1 flex items-center justify-center min-h-[40%]">
+                <p className="text-xl break-words px-4">
+                  {showAnswer && currentCard.answer}
+                </p>
+              </div>
             </div>
 
-            {showAnswer && (
-              <div className="p-4 bg-gray-50 border-t">
-                <div className="flex justify-between">
-                  <div className="text-xs text-gray-500 flex items-center justify-center w-full">
-                    <span className="mr-4">&lt;1m</span>
-                    <span className="mr-4">&lt;10m</span>
-                    <span>1d</span>
-                  </div>
-                </div>
+            <div className="sticky bottom-0 p-4 bg-gray-800 border-t border-gray-700">
+              {showAnswer ? (
                 <div className="flex gap-2 mt-1">
-                  <Button onClick={() => handleDifficultyRating("again")} variant="outline" className="flex-1">
+                  <Button
+                    onClick={() => handleDifficultyRating(AmkiState.Difficult)}
+                    variant="outline"
+                    className="flex-1 bg-gray-900 border-gray-700 text-white hover:bg-gray-800"
+                  >
                     Again (1)
                   </Button>
-                  <Button onClick={() => handleDifficultyRating("good")} variant="outline" className="flex-1">
+                  <Button
+                    onClick={() => handleDifficultyRating(AmkiState.Retrieve)}
+                    variant="outline"
+                    className="flex-1 bg-gray-900 border-gray-700 text-white hover:bg-gray-800"
+                  >
                     Good (2)
                   </Button>
-                  <Button onClick={() => handleDifficultyRating("easy")} variant="outline" className="flex-1">
+                  <Button
+                    onClick={() => handleDifficultyRating(AmkiState.Stable)}
+                    variant="outline"
+                    className="flex-1 bg-gray-900 border-gray-700 text-white hover:bg-gray-800"
+                  >
                     Easy (3)
                   </Button>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="flex gap-2 mt-1">
+                  <Button
+                    onClick={() => handleDifficultyRating(AmkiState.Stable)}
+                    variant="outline"
+                    className="flex-1 bg-gray-900 border-gray-700 text-white hover:bg-gray-800"
+                  >
+                    Flip
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }

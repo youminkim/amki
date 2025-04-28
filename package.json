@@ -6,10 +6,13 @@
         "dev": "next dev",
         "build": "next build",
         "start": "next start",
-        "lint": "next lint"
+        "lint": "next lint",
+        "test": "vitest"
     },
     "dependencies": {
+        "@google-cloud/vision": "^4.0.0",
         "@hookform/resolvers": "^3.9.1",
+        "@paralleldrive/cuid2": "^2.2.2",
         "@radix-ui/react-accordion": "1.2.2",
         "@radix-ui/react-alert-dialog": "1.1.4",
         "@radix-ui/react-aspect-ratio": "1.1.1",
@@ -47,6 +50,7 @@
         "lucide-react": "^0.454.0",
         "next": "15.2.4",
         "next-themes": "^0.4.4",
+        "openai": "^4.96.0",
         "react": "^19",
         "react-day-picker": "8.10.1",
         "react-dom": "^19",
@@ -57,8 +61,7 @@
         "tailwind-merge": "^2.5.5",
         "tailwindcss-animate": "^1.0.7",
         "vaul": "^0.9.6",
-        "zod": "^3.24.1",
-        "@google-cloud/vision": "^4.0.0"
+        "zod": "^3.24.1"
     },
     "devDependencies": {
         "@types/node": "^22",
@@ -66,7 +69,8 @@
         "@types/react-dom": "^19",
         "postcss": "^8",
         "tailwindcss": "^3.4.17",
-        "typescript": "^5"
+        "typescript": "^5",
+        "vitest": "^1.3.1"
     },
     "packageManager": "pnpm@10.9.0+sha512.0486e394640d3c1fb3c9d43d49cf92879ff74f8516959c235308f5a8f62e2e19528a65cdc2a3058f587cde71eba3d5b56327c8c33a97e4c4051ca48a10ca2d5f"
 }
